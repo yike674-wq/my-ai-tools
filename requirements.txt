@@ -1,6 +1,5 @@
 streamlit
-PyPDF2
 pandas
-openpyxl
+PyPDF2
 openai
-tabulate
+xlsxwriter
