@@ -3,26 +3,19 @@ import pandas as pd
 from openai import OpenAI
 import io
 import re
-import plotly.express as px  # ✨ 新零件：动态图表
+import plotly.express as px
 
-# --- 1. 页面高级配置 ---
+# --- 1. 配置与初始化 ---
 st.set_page_config(page_title="AI 自动化办公终端 Pro", page_icon="🦾", layout="wide")
-
-# 强制编码保险
 st.markdown('<meta charset="utf-8">', unsafe_allow_html=True)
 
-# 样式美化
-st.markdown("""
-    <style>
-    .stMetric { background-color: #ffffff; padding: 10px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .stButton>button { border-radius: 20px; height: 3em; background: linear-gradient(45deg, #007bff, #00d2ff); color: white; border: none; }
-    </style>
-    """, unsafe_allow_html=True)
+# 初始化对话记录（如果没有这一行，对话框就不会显示）
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+if "df_cleaned" not in st.session_state:
+    st.session_state["df_cleaned"] = None
 
-# --- 2. 状态保持 ---
-if "df_cleaned" not in st.session_state: st.session_state["df_cleaned"] = None
-
-# --- 3. 侧边栏 ---
+# --- 2. 侧边栏 ---
 with st.sidebar:
     st.title("⚙️ 终端控制台")
     api_key = st.text_input("DeepSeek Key", type="password")
@@ -30,22 +23,15 @@ with st.sidebar:
     
     if st.session_state["df_cleaned"] is not None:
         st.divider()
-        st.subheader("🧹 快速修复功能")
         if st.button("🚀 强制规范号码格式"):
             df = st.session_state["df_cleaned"]
             if "电话号码" in df.columns:
                 df["电话号码"] = df["电话号码"].astype(str).apply(lambda x: re.sub(r'\D', '', x))
                 st.session_state["df_cleaned"] = df
-                st.toast("格式修复成功！", icon="✅")
-            else: st.error("未找到‘电话号码’列")
-        
-        if st.button("🗑️ 剔除重复记录"):
-            old_len = len(st.session_state["df_cleaned"])
-            st.session_state["df_cleaned"] = st.session_state["df_cleaned"].drop_duplicates()
-            st.toast(f"清理完成，删除了 {old_len - len(st.session_state['df_cleaned'])} 行")
+                st.toast("修复成功！")
 
-# --- 4. 主看板 ---
-st.title("📊 AI 自动化办公看板 V5.0")
+# --- 3. 主界面 ---
+st.title("📊 AI 自动化办公看板 V5.1")
 
 if uploaded_file:
     if st.session_state["df_cleaned"] is None:
@@ -54,44 +40,60 @@ if uploaded_file:
 
     df = st.session_state["df_cleaned"]
 
-    # 顶层数据卡片
+    # 指标卡
     c1, c2, c3 = st.columns(3)
-    c1.metric("当前数据规模", f"{len(df)} 行")
-    
-    bad_count = 0
-    if "电话号码" in df.columns:
-        bad_count = len(df[df["电话号码"].astype(str).str.len() != 11])
-    c2.metric("格式异常监测", f"{bad_count} 项", delta=f"-{bad_count}" if bad_count > 0 else "已达标")
-    c3.metric("处理引擎", "DeepSeek-V3", delta="Running")
+    c1.metric("数据规模", f"{len(df)} 行")
+    bad_count = len(df[df["电话号码"].astype(str).str.len() != 11]) if "电话号码" in df.columns else 0
+    c2.metric("异常监测", f"{bad_count} 项", delta=f"-{bad_count}" if bad_count > 0 else "已达标")
+    c3.metric("处理引擎", "DeepSeek-V3")
 
-    # 功能分屏
+    # --- 核心选项卡 ---
     tab_chart, tab_data, tab_ai = st.tabs(["📈 动态分布分析", "💎 数据明细管理", "🤖 AI 专家解读"])
     
     with tab_chart:
         if "电话号码" in df.columns:
-            st.subheader("号码长度分布（交互式）")
-            df['len_check'] = df['电话号码'].astype(str).str.len()
-            count_df = df['len_check'].value_counts().reset_index()
-            count_df.columns = ['长度', '数量']
-            
-            # 使用 Plotly 绘制动态条形图
-            fig = px.bar(count_df, x='长度', y='数量', color='数量', 
-                         color_continuous_scale='Viridis', text_auto=True)
-            fig.update_layout(clickmode='event+select')
+            df['长度'] = df['电话号码'].astype(str).str.len()
+            fig = px.bar(df['长度'].value_counts().reset_index(), x='index', y='长度', 
+                         labels={'index':'号码长度', '长度':'数量'}, title="号码长度分布（交互式）")
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("上传含有电话号码的表格即可查看动态分布。")
 
     with tab_data:
         st.dataframe(df, use_container_width=True)
-        # 导出按钮
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False)
-        st.download_button("📥 导出最终审计版本", data=output.getvalue(), file_name="Audited_Data.xlsx")
 
+    # ✨ 重点修复：补全此处的对话逻辑
     with tab_ai:
-        st.write("请在此与数据专家对话...")
-        # 保持之前的 AI 对话逻辑（此处略，确保代码简洁）
+        st.caption("🤖 我是你的私人数智顾问，你可以问我关于这份数据的任何问题。")
+        
+        # 1. 展示历史对话
+        for msg in st.session_state["messages"]:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+        
+        # 2. 对话输入框
+        if user_input := st.chat_input("例如：请分析一下这份数据的异常原因..."):
+            if not api_key:
+                st.warning("请在左侧输入 API Key 才能开始对话哦！")
+            else:
+                # 记录用户输入
+                st.session_state.messages.append({"role": "user", "content": user_input})
+                with st.chat_message("user"):
+                    st.write(user_input)
+                
+                # 调用 AI
+                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                with st.chat_message("assistant"):
+                    # 把数据概况传给 AI，它才能“看懂”你的表
+                    data_summary = df.head(5).to_string()
+                    stream = client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[
+                            {"role": "system", "content": f"你是一个数据分析专家。当前数据预览：\n{data_summary}"},
+                            {"role": "user", "content": user_input}
+                        ],
+                        stream=True
+                    )
+                    response = st.write_stream(stream)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
 else:
-    st.info("💡 首席设计师，请在左侧上传那份 66 行的挑战数据！")
+    st.info("💡 请在左侧上传文件以开启 AI 审计模式。")
