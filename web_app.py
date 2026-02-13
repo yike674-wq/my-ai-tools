@@ -94,7 +94,8 @@ if st.session_state["df_cleaned"] is not None:
         if user_input := st.chat_input("询问关于这份数据的问题..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("user"):
-                 st.write(user_input)client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
+                 st.write(user_input)
+                client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
             with st.chat_message("assistant"):
                 context = display_df.head(15).to_string()
                 summary = f"列名: {list(df.columns)}\n空值: {df.isnull().sum().to_dict()}"
