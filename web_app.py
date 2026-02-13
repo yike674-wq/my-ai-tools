@@ -4,20 +4,20 @@ from openai import OpenAI
 import plotly.express as px
 from datetime import datetime
 
-# --- 1. 商业配置 ---
-st.set_page_config(page_title="AI 审计终端 | 演示版", page_icon="🏆", layout="wide")
+# --- 1. 核心配置 ---
+st.set_page_config(page_title="AI 审计终端 | 增强版", page_icon="🛡️", layout="wide")
 
 for key in ["logged_in", "df_cleaned", "messages", "history_log", "current_file"]:
     if key not in st.session_state:
         st.session_state[key] = False if key == "logged_in" else ([] if key in ["messages", "history_log"] else None)
 
-# --- 2. 登录逻辑 ---
+# --- 2. 登录验证 ---
 if not st.session_state["logged_in"]:
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        st.title("🛡️ 授权访问")
+        st.title("🔐 商业授权登录")
         invite = st.text_input("演示密钥 (VIP888)", type="password")
-        if st.button("解锁功能", use_container_width=True):
+        if st.button("进入终端", use_container_width=True):
             if invite == "VIP888":
                 st.session_state["logged_in"] = True
                 st.rerun()
@@ -27,31 +27,30 @@ OFFICIAL_KEY = st.secrets.get("DEEPSEEK_API_KEY")
 
 # --- 3. 侧边栏 ---
 with st.sidebar:
-    st.title("⚙️ 演示控制")
-    privacy_mode = st.toggle("🔒 隐私保护模式", value=True)
+    st.title("⚙️ 终端控制")
+    privacy_mode = st.toggle("🔒 隐私脱敏", value=True)
     st.divider()
     
-    if st.button("✨ 加载演示数据", use_container_width=True):
+    if st.button("✨ 一键加载演示数据", use_container_width=True):
         st.session_state["df_cleaned"] = pd.DataFrame({
-            "姓名": ["张伟", "王芳", "李娜"],
-            "预产期": ["2025-02-09", "2025-03-15", "2025-02-09"],
-            "联系电话": ["13800138000", "13912345678", "13799998888"]
+            "姓名": ["张伟", "王芳", "李娜", "陈静", "Unknown"],
+            "科室": ["内科", "外科", "内科", "儿科", None], # 模拟空值
+            "联系电话": ["13800138000", "13912345678", "13799998888", "13511112222", "18666667777"]
         })
-        st.session_state["current_file"] = "演示样本.xlsx"
+        st.session_state["current_file"] = "演示样本_稳定版.xlsx"
         st.session_state["messages"] = []
-        st.session_state["history_log"].insert(0, {"时间": datetime.now().strftime("%H:%M"), "记录": "加载演示数据"})
-        st.toast("已就绪")
+        st.toast("演示环境已就绪")
 
-    uploaded_file = st.file_uploader("📂 上传报表", type=["xlsx", "csv"])
+    uploaded_file = st.file_uploader("📂 上传自有数据", type=["xlsx", "csv"])
     if uploaded_file and uploaded_file.name != st.session_state["current_file"]:
         st.session_state.update({"df_cleaned": None, "messages": [], "current_file": uploaded_file.name})
 
-    if st.button("🚪 安全退出"):
+    if st.button("🚪 退出登录"):
         st.session_state.clear()
         st.rerun()
 
-# --- 4. 主程序 ---
-st.title("📊 AI 自动化办公看板 V10.2")
+# --- 4. 主看板 ---
+st.title("📊 AI 自动化办公看板 V10.3")
 
 if st.session_state["df_cleaned"] is not None:
     if uploaded_file and st.session_state["df_cleaned"] is None:
@@ -59,13 +58,23 @@ if st.session_state["df_cleaned"] is not None:
         st.session_state["df_cleaned"] = pd.read_csv(uploaded_file) if file_ext == "csv" else pd.read_excel(uploaded_file)
 
     df = st.session_state["df_cleaned"]
-    tab_chart, tab_data, tab_ai = st.tabs(["📈 分布", "💎 明细", "🤖 AI 审计"])
+    tab_chart, tab_data, tab_ai = st.tabs(["📈 数据统计", "💎 明细看板", "🤖 AI 审计"])
     
     with tab_chart:
-        cols = df.select_dtypes(include=['object']).columns.tolist()
+        # 优化：只选择列中有数据的对象列
+        cols = [c for c in df.columns if df[c].nunique() > 0]
         if cols:
-            target = st.selectbox("维度", cols)
-            st.plotly_chart(px.bar(df[target].value_counts().reset_index(), x='index', y=target, text_auto=True), use_container_width=True)
+            target = st.selectbox("选择分析维度", cols)
+            # 💡 核心修复：绘图前先清理空值并重命名列，避免报错
+            plot_df = df[target].value_counts(dropna=True).reset_index()
+            plot_df.columns = [target, '计数']
+            
+            if not plot_df.empty:
+                fig = px.bar(plot_df, x=target, y='计数', color='计数', text_auto=True,
+                            title=f"{target} 维度分布情况")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("该列没有可展示的有效数据。")
 
     with tab_data:
         display_df = df.copy()
@@ -85,18 +94,18 @@ if st.session_state["df_cleaned"] is not None:
             with st.chat_message("user"):
                 st.write(user_input)
             
-            # --- 注意这里必须换行 ---
             client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
             with st.chat_message("assistant"):
-                context = display_df.head(10).to_string()
-                summary = f"列名: {list(df.columns)}\n行数: {len(df)}"
-                response = st.write_stream(client.chat.completions.create(model="deepseek-chat",
+                # 提供更安全的上下文摘要
+                summary = f"列名: {list(df.columns)}\n数据量: {len(df)}行\n空值统计: {df.isnull().sum().to_dict()}"
+                response = st.write_stream(client.chat.completions.create(
+                    model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": f"数据专家。样本：\n{context}\n全表摘要：\n{summary}"},
+                        {"role": "system", "content": f"数据专家。数据摘要：\n{summary}"},
                         {"role": "user", "content": user_input}
                     ],
                     stream=True
                 ))
             st.session_state.messages.append({"role": "assistant", "content": response})
 else:
-    st.info("💡 请点击左侧【加载演示数据】开始体验。")
+    st.info("💡 终端已就绪，请加载或上传数据。")
