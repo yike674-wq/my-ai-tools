@@ -97,7 +97,7 @@ if uploaded_file:
         st.caption("🛡️ 当前已启用隐私围栏，AI 专家无法看到您的完整敏感信息。")
         for msg in st.session_state["messages"]:
             with st.chat_message(msg["role"]): st.write(msg["content"])
-            if user_input := st.chat_input("您可以询问：这份数据有什么潜在风险？"):
+        if user_input := st.chat_input("您可以询问：这份数据有什么潜在风险？"):
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("user"): st.write(user_input)
             
