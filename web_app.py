@@ -102,8 +102,7 @@ if st.session_state["df_cleaned"] is not None:
                 if any(x in str(col) for x in ["姓名", "电话", "联系", "名"]):
                     display_df[col] = display_df[col].astype(str).apply(lambda x: x[0] + "*" + x[-1] if len(x)>1 else x)
         st.dataframe(display_df, use_container_width=True)
-            with tab_ai:
-        st.write("### 🤖 首席 AI 审计官")
+            with tab_ai:st.write("### 🤖 首席 AI 审计官")
         for msg in st.session_state["messages"]:
             with st.chat_message(msg["role"]): st.write(msg["content"])
         
