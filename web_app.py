@@ -4,14 +4,14 @@ from openai import OpenAI
 import plotly.express as px
 from datetime import datetime
 
-# --- 1. 初始化 ---
-st.set_page_config(page_title="AI 智能审计终端 V11.1", page_icon="🛡️", layout="wide")
+# --- 1. 初始化配置 ---
+st.set_page_config(page_title="AI 智能审计终端 V11.2", page_icon="🛡️", layout="wide")
 
 for key in ["logged_in", "df_cleaned", "messages", "current_file"]:
     if key not in st.session_state:
         st.session_state[key] = False if key == "logged_in" else ([] if key == "messages" else None)
 
-# --- 2. 自动审计逻辑 (已验证有效) ---
+# --- 2. 自动化审计逻辑 ---
 def audit_data(df):
     alerts = []
     if "联系电话" in df.columns:
@@ -20,6 +20,7 @@ def audit_data(df):
             alerts.append(f"❌ {len(invalid_phones)} 个电话号码格式异常")
     if "预产期" in df.columns:
         today = datetime.now().strftime("%Y-%m-%d")
+        # 强制转换日期格式并对比
         past_due = df[df["预产期"].astype(str) < today]
         if not past_due.empty:
             alerts.append(f"🚩 提醒：有 {len(past_due)} 条记录预产期早于今天")
@@ -46,11 +47,11 @@ with st.sidebar:
     if st.button("✨ 加载风险演示数据", use_container_width=True):
         st.session_state["df_cleaned"] = pd.DataFrame({
             "姓名": ["张伟", "王芳", "李娜", "陈静", "赵雷"],
-            "科室": ["内科", "外科", "内科", "儿科", None], # 包含空值
+            "科室": ["内科", "外科", "内科", "儿科", None], 
             "预产期": ["2024-01-10", "2025-06-15", "2024-05-09", "2025-08-20", "2024-02-12"],
             "联系电话": ["13800138000", "1391234", "13799998888", "13511112222", "18666667777"]
         })
-        st.session_state["current_file"] = "风险样本.xlsx"
+        st.session_state["current_file"] = "演示样本.xlsx"
         st.session_state["messages"] = []
         st.rerun()
 
@@ -59,12 +60,12 @@ with st.sidebar:
         st.rerun()
 
 # --- 5. 主看板 ---
-st.title("📊 AI 自动化办公看板 V11.1")
+st.title("📊 AI 自动化办公看板 V11.2")
 
 if st.session_state["df_cleaned"] is not None:
     df = st.session_state["df_cleaned"]
     
-    # 风险扫描展示
+    # 顶部风险警报展示
     risk_alerts = audit_data(df)
     for alert in risk_alerts:
         st.error(alert)
@@ -81,7 +82,7 @@ if st.session_state["df_cleaned"] is not None:
             with st.chat_message("user"): st.write(user_input)
             client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
             with st.chat_message("assistant"):
-                context = f"风险列表：{risk_alerts}\n数据摘要：{df.describe().to_string()}"
+                context = f"风险列表：{risk_alerts}\n数据前几行：{df.head().to_string()}"
                 response = st.write_stream(client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
@@ -96,16 +97,18 @@ if st.session_state["df_cleaned"] is not None:
         st.subheader("📊 维度分布分析")
         col_x = st.selectbox("选择分析维度", df.columns, index=1)
         
-        # 💡 核心修复：安全绘图逻辑
-        # 1. 剔除空值 2. 统计频次 3. 强制重命名列名防止冲突
-        plot_data = df[col_x].value_counts(dropna=True).reset_index()
-        plot_data.columns = ['维度', '计数'] 
-        
-        if not plot_data.empty:
-            fig = px.bar(plot_data, x='维度', y='计数', color='计数', text_auto=True)
+        # 💡 核心修复：极致稳健的绘图逻辑
+        try:
+            # 1. 统计频次并处理空值，强制转为字符串防止类型冲突
+            plot_data = df[col_x].fillna("（空值）").astype(str).value_counts().reset_index()
+            # 2. 统一重命名列名，彻底解决 Plotly 找不到列名的问题plot_data.columns = ['类别', '条数'] 
+            
+            fig = px.bar(plot_data, x='类别', y='条数', color='条数', 
+                         text_auto=True, title=f"{col_x} 统计分布")
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("所选维度没有有效数据可供显示。") 
+        except Exception as e:
+            st.warning(f"暂时无法为该列生成图表：{e}")
+
     with tab_data:
         display_df = df.copy()
         if privacy_mode:
@@ -113,6 +116,5 @@ if st.session_state["df_cleaned"] is not None:
                 if any(x in str(col) for x in ["姓名", "电话"]):
                     display_df[col] = display_df[col].astype(str).apply(lambda x: x[0] + "*" + x[-1] if len(x)>1 else x)
         st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("💡 请在左侧加载演示数据。")
-   
+else:
+    st.info("💡 请在左侧侧边栏点击【加载风险演示数据】开始。")
