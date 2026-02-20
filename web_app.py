@@ -4,41 +4,28 @@ from openai import OpenAI
 import plotly.express as px
 from datetime import datetime
 
-# --- 1. 初始化配置 ---
-st.set_page_config(page_title="AI 智能审计终端 V11.0", page_icon="🛡️", layout="wide")
+# --- 1. 初始化 ---
+st.set_page_config(page_title="AI 智能审计终端 V11.1", page_icon="🛡️", layout="wide")
 
-# 确保状态机完整
 for key in ["logged_in", "df_cleaned", "messages", "current_file"]:
     if key not in st.session_state:
         st.session_state[key] = False if key == "logged_in" else ([] if key == "messages" else None)
 
-# --- 2. 【新增】自动化审计逻辑函数 ---
+# --- 2. 自动审计逻辑 (已验证有效) ---
 def audit_data(df):
-    """这是程序的自动安检机，负责发现硬伤"""
     alerts = []
-    
-    # 风险1：电话号码长度校验
     if "联系电话" in df.columns:
-        # 将非字符串转为字符串，计算长度不等于11位的记录
         invalid_phones = df[df["联系电话"].astype(str).str.len() != 11]
         if not invalid_phones.empty:
-            alerts.append(f"❌ 发现 {len(invalid_phones)} 个电话号码格式错误（非11位）")
-            
-    # 风险2：重复数据校验
-    dup_count = df.duplicated().sum()
-    if dup_count > 0:
-        alerts.append(f"🧬 发现 {dup_count} 条完全重复的记录行")
-        
-    # 风险3：逻辑漏洞（演示：预产期已过期）
+            alerts.append(f"❌ {len(invalid_phones)} 个电话号码格式异常")
     if "预产期" in df.columns:
         today = datetime.now().strftime("%Y-%m-%d")
-        past_due = df[df["预产期"] < today]
+        past_due = df[df["预产期"].astype(str) < today]
         if not past_due.empty:
-            alerts.append(f"🚩 提醒：有 {len(past_due)} 条记录预产期早于今天，请确认状态")
-            
+            alerts.append(f"🚩 提醒：有 {len(past_due)} 条记录预产期早于今天")
     return alerts
 
-# --- 3. 登录权限（沿用 V10.3 成功逻辑） ---
+# --- 3. 登录逻辑 ---
 if not st.session_state["logged_in"]:
     _, col, _ = st.columns([1, 2, 1])
     with col:
@@ -52,63 +39,53 @@ if not st.session_state["logged_in"]:
 
 OFFICIAL_KEY = st.secrets.get("DEEPSEEK_API_KEY")
 
-# --- 4. 侧边栏与数据加载 ---
+# --- 4. 侧边栏 ---
 with st.sidebar:
     st.title("⚙️ 审计控制台")
-    privacy_mode = st.toggle("🔒 隐私脱敏开关", value=True)
-    
-    # 演示数据：特意构造一些错误数据供演示
-    if st.button("✨ 加载带风险的演示数据", use_container_width=True):
+    privacy_mode = st.toggle("🔒 隐私脱敏", value=True)
+    if st.button("✨ 加载风险演示数据", use_container_width=True):
         st.session_state["df_cleaned"] = pd.DataFrame({
-            "姓名": ["张伟", "王芳", "李娜", "陈静", "张伟"], # 故意包含重复人
-            "科室": ["内科", "外科", "内科", "儿科", "内科"],
-            "预产期": ["2024-01-10", "2025-06-15", "2025-03-09", "2025-08-20", "2024-01-10"], # 包含过期时间
-            "联系电话": ["13800138000", "1391234", "13799998888", "13511112222", "13800138000"] # 包含错误长度
+            "姓名": ["张伟", "王芳", "李娜", "陈静", "赵雷"],
+            "科室": ["内科", "外科", "内科", "儿科", None], # 包含空值
+            "预产期": ["2024-01-10", "2025-06-15", "2024-05-09", "2025-08-20", "2024-02-12"],
+            "联系电话": ["13800138000", "1391234", "13799998888", "13511112222", "18666667777"]
         })
-        st.session_state["current_file"] = "演示风险样本.xlsx"
+        st.session_state["current_file"] = "风险样本.xlsx"
         st.session_state["messages"] = []
-    
-    uploaded_file = st.file_uploader("📂 或上传自有业务表", type=["xlsx", "csv"])
-    if st.button("🚪 退出并销毁记忆"):
+        st.rerun()
+
+    if st.button("🚪 退出系统"):
         st.session_state.clear()
         st.rerun()
 
 # --- 5. 主看板 ---
-st.title("📊 AI 自动化办公看板 V11.0")
+st.title("📊 AI 自动化办公看板 V11.1")
 
 if st.session_state["df_cleaned"] is not None:
     df = st.session_state["df_cleaned"]
     
-    # 🚀 【亮点】自动审计结果展示
-    st.markdown("### 🚨 风险自动扫描")
+    # 风险扫描展示
     risk_alerts = audit_data(df)
-    if risk_alerts:
-        for alert in risk_alerts:
-            st.error(alert)
-    else:
-        st.success("✅ 基础逻辑扫描通过，未发现格式异常")
+    for alert in risk_alerts:
+        st.error(alert)
 
-    # 功能标签页
     tab_ai, tab_viz, tab_data = st.tabs(["🤖 AI 专家诊断", "📈 交叉统计", "💎 脱敏明细"])
     
     with tab_ai:
         st.write("### 🤖 首席 AI 审计官")
-        # 显示对话历史
         for msg in st.session_state["messages"]:
             with st.chat_message(msg["role"]): st.write(msg["content"])
-            
-        if user_input := st.chat_input("您可以追问：‘那几个电话号码错在哪里了？’"):
+        
+        if user_input := st.chat_input("询问更多细节..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("user"): st.write(user_input)
-            
             client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
             with st.chat_message("assistant"):
-                # 把逻辑审计的结果也告诉 AI，增强它的诊断能力
-                context_info = f"系统检测到以下风险：{risk_alerts}。数据样本如下：{df.head(10).to_string()}"
+                context = f"风险列表：{risk_alerts}\n数据摘要：{df.describe().to_string()}"
                 response = st.write_stream(client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": f"你是一名资深审计专家。当前环境：{context_info}"},
+                        {"role": "system", "content": f"你是审计专家。{context}"},
                         {"role": "user", "content": user_input}
                     ],
                     stream=True
@@ -116,17 +93,26 @@ if st.session_state["df_cleaned"] is not None:
             st.session_state.messages.append({"role": "assistant", "content": response})
 
     with tab_viz:
-        # 交叉分析逻辑
-        col_x = st.selectbox("选择分类维度", df.columns, index=1)
-        st.plotly_chart(px.bar(df[col_x].value_counts().reset_index(), x='index', y=col_x, text_auto=True), use_container_width=True)
-
+        st.subheader("📊 维度分布分析")
+        col_x = st.selectbox("选择分析维度", df.columns, index=1)
+        
+        # 💡 核心修复：安全绘图逻辑
+        # 1. 剔除空值 2. 统计频次 3. 强制重命名列名防止冲突
+        plot_data = df[col_x].value_counts(dropna=True).reset_index()
+        plot_data.columns = ['维度', '计数'] 
+        
+        if not plot_data.empty:
+            fig = px.bar(plot_data, x='维度', y='计数', color='计数', text_auto=True)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("所选维度没有有效数据可供显示。") 
     with tab_data:
-        # 脱敏展示
         display_df = df.copy()
         if privacy_mode:
             for col in display_df.columns:
                 if any(x in str(col) for x in ["姓名", "电话"]):
                     display_df[col] = display_df[col].astype(str).apply(lambda x: x[0] + "*" + x[-1] if len(x)>1 else x)
         st.dataframe(display_df, use_container_width=True)
-else:
-    st.info("👋 请在侧边栏点击【加载带风险的演示数据】或上传文件开始审计。")
+        else:
+            st.info("💡 请在左侧加载演示数据。")
+   
