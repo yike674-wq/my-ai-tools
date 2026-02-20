@@ -5,28 +5,39 @@ import plotly.express as px
 from datetime import datetime
 
 # --- 1. 初始化配置 ---
-st.set_page_config(page_title="AI 智能审计终端 V11.2", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="AI 智能审计终端 V11.3", page_icon="🛡️", layout="wide")
 
+# 初始化状态
 for key in ["logged_in", "df_cleaned", "messages", "current_file"]:
     if key not in st.session_state:
         st.session_state[key] = False if key == "logged_in" else ([] if key == "messages" else None)
 
-# --- 2. 自动化审计逻辑 ---
+# --- 2. 自动化审计引擎 ---
 def audit_data(df):
     alerts = []
+    if df is None or df.empty: return alerts
+    
+    # 风险1：电话长度
     if "联系电话" in df.columns:
         invalid_phones = df[df["联系电话"].astype(str).str.len() != 11]
         if not invalid_phones.empty:
             alerts.append(f"❌ {len(invalid_phones)} 个电话号码格式异常")
+            
+    # 风险2：日期过期
     if "预产期" in df.columns:
         today = datetime.now().strftime("%Y-%m-%d")
-        # 强制转换日期格式并对比
         past_due = df[df["预产期"].astype(str) < today]
         if not past_due.empty:
             alerts.append(f"🚩 提醒：有 {len(past_due)} 条记录预产期早于今天")
+            
+    # 风险3：重复项
+    dups = df.duplicated().sum()
+    if dups > 0:
+        alerts.append(f"🧬 发现 {dups} 条完全重复的数据记录")
+        
     return alerts
 
-# --- 3. 登录逻辑 ---
+# --- 3. 登录权限控制 ---
 if not st.session_state["logged_in"]:
     _, col, _ = st.columns([1, 2, 1])
     with col:
@@ -40,49 +51,67 @@ if not st.session_state["logged_in"]:
 
 OFFICIAL_KEY = st.secrets.get("DEEPSEEK_API_KEY")
 
-# --- 4. 侧边栏 ---
+# --- 4. 侧边栏：功能回归 ---
 with st.sidebar:
     st.title("⚙️ 审计控制台")
     privacy_mode = st.toggle("🔒 隐私脱敏", value=True)
+    st.divider()
+
+    # 选项A：加载演示数据
     if st.button("✨ 加载风险演示数据", use_container_width=True):
         st.session_state["df_cleaned"] = pd.DataFrame({
-            "姓名": ["张伟", "王芳", "李娜", "陈静", "赵雷"],
-            "科室": ["内科", "外科", "内科", "儿科", None], 
-            "预产期": ["2024-01-10", "2025-06-15", "2024-05-09", "2025-08-20", "2024-02-12"],
-            "联系电话": ["13800138000", "1391234", "13799998888", "13511112222", "18666667777"]
+            "姓名": ["张伟", "王芳", "李娜", "陈静", "赵雷", "张伟"],
+            "科室": ["内科", "外科", "内科", "儿科", None, "内科"], 
+            "预产期": ["2024-01-10", "2025-06-15", "2024-05-09", "2025-08-20", "2024-02-12", "2024-01-10"],
+            "联系电话": ["13800138000", "1391234", "13799998888", "13511112222", "18666667777", "13800138000"]
         })
-        st.session_state["current_file"] = "演示样本.xlsx"
+        st.session_state["current_file"] = "Internal_Demo.xlsx"
         st.session_state["messages"] = []
         st.rerun()
 
-    if st.button("🚪 退出系统"):
+    # 选项B：上传自有数据（功能回归！）
+    uploaded_file = st.file_uploader("📂 上传业务报表", type=["xlsx", "csv"])
+    if uploaded_file and uploaded_file.name != st.session_state["current_file"]:
+        # 根据后缀读取数据
+        if uploaded_file.name.endswith('.csv'):
+            st.session_state["df_cleaned"] = pd.read_csv(uploaded_file)
+        else:
+            st.session_state["df_cleaned"] = pd.read_excel(uploaded_file)
+        st.session_state["current_file"] = uploaded_file.name
+        st.session_state["messages"] = []
+        st.rerun()
+
+    st.divider()
+    if st.button("🚪 退出并销毁记忆"):
         st.session_state.clear()
         st.rerun()
 
-# --- 5. 主看板 ---
-st.title("📊 AI 自动化办公看板 V11.2")
+# --- 5. 主看板展示 ---
+st.title("📊 AI 自动化办公看板 V11.3")
 
 if st.session_state["df_cleaned"] is not None:
     df = st.session_state["df_cleaned"]
     
-    # 顶部风险警报展示
+    # 自动化审计报告区
     risk_alerts = audit_data(df)
-    for alert in risk_alerts:
-        st.error(alert)
+    if risk_alerts:
+        for alert in risk_alerts: st.error(alert)
+    else:
+        st.success("✅ 逻辑扫描未发现明显格式异常")
 
-    tab_ai, tab_viz, tab_data = st.tabs(["🤖 AI 专家诊断", "📈 交叉统计", "💎 脱敏明细"])
+    tab_ai, tab_viz, tab_data = st.tabs(["🤖 AI 专家诊断", "📈 维度分析", "💎 明细看板"])
     
     with tab_ai:
         st.write("### 🤖 首席 AI 审计官")
         for msg in st.session_state["messages"]:
             with st.chat_message(msg["role"]): st.write(msg["content"])
         
-        if user_input := st.chat_input("询问更多细节..."):
+        if user_input := st.chat_input("您可以追问关于数据的细节..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
             with st.chat_message("user"): st.write(user_input)
-            client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
+            
             with st.chat_message("assistant"):
-                context = f"风险列表：{risk_alerts}\n数据前几行：{df.head().to_string()}"
+                context = f"检测到风险：{risk_alerts}\n数据摘要：{df.describe().to_string()}"
                 response = st.write_stream(client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
@@ -92,29 +121,3 @@ if st.session_state["df_cleaned"] is not None:
                     stream=True
                 ))
             st.session_state.messages.append({"role": "assistant", "content": response})
-
-    with tab_viz:
-        st.subheader("📊 维度分布分析")
-        col_x = st.selectbox("选择分析维度", df.columns, index=1)
-        
-        # 💡 核心修复：极致稳健的绘图逻辑
-        try:
-            # 1. 统计频次并处理空值，强制转为字符串防止类型冲突
-            plot_data = df[col_x].fillna("（空值）").astype(str).value_counts().reset_index()
-            # 2. 统一重命名列名，彻底解决 Plotly 找不到列名的问题plot_data.columns = ['类别', '条数'] 
-            
-            fig = px.bar(plot_data, x='类别', y='条数', color='条数', 
-                         text_auto=True, title=f"{col_x} 统计分布")
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.warning(f"暂时无法为该列生成图表：{e}")
-
-    with tab_data:
-        display_df = df.copy()
-        if privacy_mode:
-            for col in display_df.columns:
-                if any(x in str(col) for x in ["姓名", "电话"]):
-                    display_df[col] = display_df[col].astype(str).apply(lambda x: x[0] + "*" + x[-1] if len(x)>1 else x)
-        st.dataframe(display_df, use_container_width=True)
-else:
-    st.info("💡 请在左侧侧边栏点击【加载风险演示数据】开始。")
