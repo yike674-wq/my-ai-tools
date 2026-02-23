@@ -109,22 +109,21 @@ if st.session_state["df_cleaned"] is not None:
             for msg in st.session_state["messages"]:
                 with st.chat_message(msg["role"]): st.write(msg["content"])
                 if user_input := st.chat_input("您可以问：这些没标记颜色的号里有多少重复的？"):
-                st.session_state.messages.append({"role": "user", "content": user_input})
-                with st.chat_message("user"): st.write(user_input)
-                
-                with st.chat_message("assistant"):
-                    # 喂给 AI 提取出的数据片段
-                    context = f"当前提取的数据前30行：\n{df.head(30).to_string()}\n总记录数：{len(df)}"
-                    response = st.write_stream(client.chat.completions.create(
-                        model="deepseek-chat",
-                        messages=[
-                            {"role": "system", "content": f"你是审计专家。{context}"},
-                            {"role": "user", "content": user_input}
-                        ],
-                        stream=True
-                    ))
-                st.session_state.messages.append({"role": "assistant", "content": response})
-        else:
-            st.warning("请配置 API Key 以启用 AI 诊断。")
-else:
-    st.info("👋 欢迎！请在左侧上传 Excel 文件并选择提取模式。")
+                    st.session_state["messages"].append({"role": "user", "content": user_input})
+                    with st.chat_message("user"):
+                        st.write(user_input)
+
+                    with st.chat_message("assistant"):
+                        # 喂给 AI 提取出的数据片段
+                        context = f"当前提取的数据前30行：\n{df.head(30).to_string()}\n总记录数：{len(df)}"
+                        response = st.write_stream(
+                            client.chat.completions.create(
+                                model="deepseek-chat",
+                                messages=[
+                                    {"role": "system", "content": f"你是审计专家。{context}"},
+                                    {"role": "user", "content": user_input}
+                                ],
+                                stream=True
+                            )
+                        )
+                    st.session_state["messages"].append({"role": "assistant", "content": response})
