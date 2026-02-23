@@ -110,28 +110,44 @@ if st.session_state["df_cleaned"] is not None:
             st.info(f"💡 发现 {df.duplicated().sum()} 条重复记录")
 
     with tab_ai:
-        OFFICIAL_KEY = st.secrets.get("DEEPSEEK_API_KEY")
-        if OFFICIAL_KEY:
-            client = OpenAI(api_key=OFFICIAL_KEY, base_url="https://api.deepseek.com")
-            
+        st.subheader("🤖 首席 AI 审计官")
+        
+        # 1. 强制显示当前消息
+        if not st.session_state["messages"]:
+            st.info("💡 暂无对话记录。您可以尝试问：'这些号码中有重复的吗？'")
+        else:
             for msg in st.session_state["messages"]:
-                with st.chat_message(msg["role"]): st.write(msg["content"])
-                if user_input := st.chat_input("您可以问：这些没标记颜色的号里有多少重复的？"):
-                    st.session_state["messages"].append({"role": "user", "content": user_input})
-                    with st.chat_message("user"):
-                        st.write(user_input)
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+        
+        # 2. 检查 API Key 并显化输入框
+        api_key = st.secrets.get("DEEPSEEK_API_KEY")
+        
+        if not api_key:
+            st.error("🔑 未检测到 API Key！请在 Streamlit Secrets 中配置 DEEPSEEK_API_KEY。")
+            # 即使没 Key，也给个模拟输入框样式，方便调试
+            st.text_input("对话框已禁用 (缺少 Key)", disabled=True, placeholder="请先配置 API Key...")
+        else:
+            # 核心对话输入
+            if prompt := st.chat_input("说点什么..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.write(prompt)
+                
+                with st.chat_message("assistant"):
+                    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                    context = f"数据预览：\n{df.head(20).to_string()}"
+                    response = st.write_stream(client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[
+                            {"role": "system", "content": f"审计专家。{context}"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        stream=True
+                    ))
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.rerun() # 强制刷新以保持对话框在底部
 
-                    with st.chat_message("assistant"):
-                        # 喂给 AI 提取出的数据片段
-                        context = f"当前提取的数据前30行：\n{df.head(30).to_string()}\n总记录数：{len(df)}"
-                        response = st.write_stream(
-                            client.chat.completions.create(
-                                model="deepseek-chat",
-                                messages=[
-                                    {"role": "system", "content": f"你是审计专家。{context}"},
-                                    {"role": "user", "content": user_input}
-                                ],
-                                stream=True
-                            )
-                        )
-                    st.session_state["messages"].append({"role": "assistant", "content": response})
+        if st.button("🗑️ 清空当前对话"):
+            st.session_state["messages"] = []
+            st.rerun()
