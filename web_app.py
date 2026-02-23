@@ -7,13 +7,21 @@ import plotly.express as px
 from io import BytesIO
 from datetime import datetime
 
-# --- 1. 初始化配置 ---
+# --- 1. 稳健的初始化配置 ---
 st.set_page_config(page_title="AI 审计终端 V12.3", page_icon="🧼", layout="wide")
 
-for key in ["logged_in", "df_cleaned", "messages", "current_file", "raw_binary"]:
+# 确保所有必要的键都在 session_state 中，且初始值类型正确
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+# 重点修复：显式初始化为列表，防止 TypeError
+if "messages" not in st.session_state or st.session_state["messages"] is None:
+    st.session_state["messages"] = []
+
+# 其他变量初始化
+for key in ["df_cleaned", "current_file", "raw_binary"]:
     if key not in st.session_state:
-        st.session_state[key] = False if key == "logged_in" else None
-if "messages" not in st.session_state: st.session_state["messages"] = []
+        st.session_state[key] = None
 
 # --- 2. 视觉引擎：颜色识别与提取 ---
 def process_visual_data(file_bytes, mode="all"):
